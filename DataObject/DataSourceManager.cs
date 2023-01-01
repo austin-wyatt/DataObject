@@ -27,5 +27,21 @@ namespace DataObjects
 
             return null;
         }
+
+        public static void SaveSources()
+        {
+            foreach(var source in DataSources.Values)
+            {
+                source.SaveAllPendingBlocks(createIfNonExistent: true);
+            }
+        }
+
+        public static void LoadSources()
+        {
+            foreach (var source in DataSources.Values)
+            {
+                source.ClearBlocks();
+            }
+        }
     }
 }

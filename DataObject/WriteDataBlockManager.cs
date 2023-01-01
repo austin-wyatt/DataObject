@@ -164,10 +164,19 @@ namespace DataObjects
                     }
                 }
 
-                foreach (int blockId in UNSAVED_BLOCKS)
+                HashSet<int> unsavedBlocks = new HashSet<int>(UNSAVED_BLOCKS);
+
+
+                while (unsavedBlocks.Count > 0) 
                 {
-                    SaveDataBlock(blockId);
+                    foreach (int blockId in unsavedBlocks)
+                    {
+                        SaveDataBlock(blockId);
+                    }
+
+                    unsavedBlocks = new HashSet<int>(UNSAVED_BLOCKS);
                 }
+                
 
                 UNSAVED_BLOCKS.Clear();
             }

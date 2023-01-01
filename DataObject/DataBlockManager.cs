@@ -84,6 +84,11 @@ namespace DataObjects
             UNSAVED_BLOCKS.Add(blockId);
         }
 
+        public void ClearBlocks()
+        {
+            Blocks.Clear();
+        }
+
         protected class DataObjectConverter : CustomCreationConverter<IDictionary<string, object>>
         {
             public override IDictionary<string, object> Create(Type objectType)
