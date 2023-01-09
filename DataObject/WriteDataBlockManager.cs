@@ -61,9 +61,35 @@ namespace DataObjects
             else
             {
                 block = new DataBlock(blockId, new Dictionary<string, object>());
-                block.Data.TryAdd(id.ToString(), data);
+                block.Data.Add(id.ToString(), data);
 
-                Blocks.Add(blockId, block);
+                AddDataBlock(blockId, block);
+                lock (UNSAVED_BLOCKS)
+                    UNSAVED_BLOCKS.Add(block.BlockId);
+            }
+        }
+
+        public void SetDataObject(int id, Dictionary<string, object> data)
+        {
+            int blockId = id / BlockSize;
+            DataBlock block;
+
+            if (GetDataBlock(blockId, out block))
+            {
+                if(!block.Data.TryAdd(id.ToString(), data))
+                {
+                    block.Data[id.ToString()] = data;
+                }
+
+                lock (UNSAVED_BLOCKS)
+                    UNSAVED_BLOCKS.Add(block.BlockId);
+            }
+            else
+            {
+                block = new DataBlock(blockId, new Dictionary<string, object>());
+                block.Data.Add(id.ToString(), data);
+
+                AddDataBlock(blockId, block);
                 lock (UNSAVED_BLOCKS)
                     UNSAVED_BLOCKS.Add(block.BlockId);
             }
@@ -179,12 +205,114 @@ namespace DataObjects
                 
 
                 UNSAVED_BLOCKS.Clear();
+                UpdateAvailableDataBlocks();
             }
         }
 
         public void SetDataBasePath(string newPath) 
         {
             DATA_BASE_PATH = newPath;
+        }
+
+        public List<DataObjectEntry> GetEntriesInDirection(int idealId, SearchDirection searchDir, int amount)
+        {
+            List<DataObjectEntry> returnEntries = new List<DataObjectEntry>();
+
+            //first see if we can find consecutive ids to make life easy
+            while (GetDataObject(idealId, out var foundObj) && returnEntries.Count < amount)
+            {
+                returnEntries.Add(new DataObjectEntry(foundObj, "", idealId, this));
+                if (searchDir == SearchDirection.Lower)
+                    idealId--;
+                else if (searchDir == SearchDirection.Higher)
+                    idealId++;
+            }
+
+            //the index of the available block
+            int idealBlockId = idealId / BlockSize;
+            int blockIdIndex = AvailableBlocks.IndexOf(idealBlockId);
+
+            if(blockIdIndex == -1)
+            {
+                if(searchDir == SearchDirection.Lower)
+                {
+                    for(int i = AvailableBlocks.Count - 1; i >= 0; i--)
+                    {
+                        if(AvailableBlocks[i] < idealBlockId)
+                        {
+                            blockIdIndex = i;
+                            break;
+                        }
+                    }
+                }
+                else if(searchDir == SearchDirection.Higher)
+                {
+                    for (int i = 0; i < AvailableBlocks.Count; i++)
+                    {
+                        if (AvailableBlocks[i] > idealBlockId)
+                        {
+                            blockIdIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            List<int> objectIds = new List<int>();
+
+            //next, walk through all of the available blocks (loading them from disk if necessary) to find ids
+            while (returnEntries.Count < amount)
+            {
+                objectIds.Clear();
+
+                if (blockIdIndex >= 0 && blockIdIndex < AvailableBlocks.Count)
+                {
+                    GetDataBlock(AvailableBlocks[blockIdIndex], out DataBlock block);
+
+                    foreach(var kvp in block.Data)
+                    {
+                        objectIds.Add(int.Parse(kvp.Key));
+                    }
+
+                    objectIds.Sort();
+
+                    if(searchDir == SearchDirection.Lower)
+                    {
+                        for(int i = objectIds.Count - 1; i >= 0 && returnEntries.Count < amount; i--)
+                        {
+                            if(objectIds[i] < idealId)
+                            {
+                                idealId = objectIds[i];
+                                GetDataObject(objectIds[i], out var foundObj);
+                                returnEntries.Add(new DataObjectEntry(foundObj, "", idealId, this));
+                            }
+                        }
+
+                        blockIdIndex--;
+                    }
+                    else if (searchDir == SearchDirection.Higher)
+                    {
+                        for (int i = 0; i < objectIds.Count && returnEntries.Count < amount; i++)
+                        {
+                            if (objectIds[i] > idealId)
+                            {
+                                idealId = objectIds[i];
+                                GetDataObject(objectIds[i], out var foundObj);
+                                returnEntries.Add(new DataObjectEntry(foundObj, "", idealId, this));
+                            }
+                        }
+
+                        blockIdIndex++;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+
+            return returnEntries;
         }
     }
 }

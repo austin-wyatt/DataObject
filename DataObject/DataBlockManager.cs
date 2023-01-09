@@ -7,6 +7,12 @@ using Newtonsoft.Json.Converters;
 
 namespace DataObjects
 {
+    public enum SearchDirection
+    {
+        Higher,
+        Lower
+    }
+
     public class DataBlockManager
     {
         public HashSet<int> UNSAVED_BLOCKS = new HashSet<int>();
@@ -23,6 +29,8 @@ namespace DataObjects
 
         protected Dictionary<int, DataBlock> Blocks;
 
+        protected List<int> AvailableBlocks = new List<int>();
+
         public DataBlockManager(int blockSize, string filePrefix, string dataBasePath) 
         {
             BlockSize = blockSize;
@@ -35,6 +43,8 @@ namespace DataObjects
             {
                 Directory.CreateDirectory(DATA_BASE_PATH);
             }
+
+            UpdateAvailableDataBlocks();
         }
 
         public bool GetDataObject(int objectId, out Dictionary<string, object> dataObject) 
@@ -52,6 +62,13 @@ namespace DataObjects
             return false;
         }
 
+        protected void AddDataBlock(int blockId, DataBlock block)
+        {
+            Blocks.Add(blockId, block);
+            if(AvailableBlocks.IndexOf(blockId) == -1)
+                AvailableBlocks.Add(blockId);
+        }
+
         protected bool LoadDataBlock(int blockId, out DataBlock block) 
         {
             string fileName = DATA_BASE_PATH + FilePrefix + blockId;
@@ -65,7 +82,7 @@ namespace DataObjects
                     new JsonConverter[] { new DataObjectConverter() });
 
                 block = new DataBlock(blockId, deserializedDict);
-                Blocks.Add(blockId, block);
+                AddDataBlock(blockId, block);
                 return true;
             }
 
@@ -87,6 +104,27 @@ namespace DataObjects
         public void ClearBlocks()
         {
             Blocks.Clear();
+        }
+
+        protected void UpdateAvailableDataBlocks()
+        {
+            AvailableBlocks.Clear();
+
+            var files = Directory.GetFiles(DATA_BASE_PATH);
+
+            foreach(string fileName in files)
+            {
+                int index = fileName.LastIndexOf('/') + 1;
+
+                var substr = fileName.AsSpan(index);
+
+                if (MemoryExtensions.Contains(substr, FilePrefix.AsSpan(), StringComparison.Ordinal))
+                {
+                    AvailableBlocks.Add(int.Parse(substr.Slice(FilePrefix.Length)));
+                }
+            }
+
+            AvailableBlocks.Sort();
         }
 
         protected class DataObjectConverter : CustomCreationConverter<IDictionary<string, object>>

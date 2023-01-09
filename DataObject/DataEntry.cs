@@ -12,15 +12,15 @@ namespace DataObjects
         /// <summary>
         /// The parent of the key/value pair from the search
         /// </summary>
-        public Dictionary<string, object> Parent { get; }
+        public Dictionary<string, object> Parent { get; set; }
 
         /// <summary>
         /// The key of the Parent object that can be used to access the entry's value
         /// </summary>
-        public string EntryName { get; }
+        public string EntryName { get; set; }
 
         public int ObjectId { get; }
-        private WriteDataBlockManager _source;
+        public WriteDataBlockManager _source { get; private set; }
 
         public DataObjectEntry() { }
         public DataObjectEntry(Dictionary<string, object> parent, string entryName, int objectId, WriteDataBlockManager source) 
@@ -42,18 +42,108 @@ namespace DataObjects
 
         public void SetValue(object value)
         {
-            Parent[EntryName] = value;
-            EntryModified();
+            if(EntryName == "")
+            {
+                _source.SetDataObject(ObjectId, value as Dictionary<string, object>);
+            }
+            else
+            {
+                if(!Parent.TryAdd(EntryName, value))
+                {
+                    Parent[EntryName] = value;
+                }
+                
+                EntryModified();
+            }
         }
 
         public bool TryGetValue(out object value)
         {
+            if (EntryName == "")
+            {
+                value = Parent;
+                return true;
+            }
+
             return Parent.TryGetValue(EntryName, out value);
         }
 
         public object GetValue()
         {
+            if (EntryName == "")
+                return Parent;
+
             return Parent[EntryName];
+        }
+
+        public void DeleteEntry()
+        {
+            if (EntryName == "")
+                _source.DeleteDataObject(ObjectId);
+            else
+            {
+                Parent.Remove(EntryName);
+            }
+
+            EntryModified();
+        }
+
+        public void SetSubValue(string key, object value)
+        {
+            if (EntryName == "")
+            {
+                if(!Parent.TryAdd(key, value))
+                {
+                    Parent[key] = value;
+                }
+            }
+            else
+            {
+                Dictionary<string, object> dict = Parent[EntryName] as Dictionary<string, object>;
+                if(dict != null)
+                {
+                    if(!dict.TryAdd(key, value))
+                    {
+                        dict[key] = value;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Attempts to create a new DataObjectEntry with the current EntryName field as the parent
+        /// and the passed key as the new EntryName. <para/>
+        /// Ie. create a DataObjectEntry one step further down the tree
+        /// </summary>
+        public DataObjectEntry GetSubEntry(params string[] keys)
+        {
+            string entryName = EntryName;
+            Dictionary<string, object> parent = Parent;
+
+            if (keys.Length == 0)
+                return null;
+
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (entryName == "" && Parent.ContainsKey(keys[i]))
+                {
+                    entryName = keys[i];
+                }
+                else if (parent.ContainsKey(entryName))
+                {
+                    parent = parent[entryName] as Dictionary<string, object>;
+                    entryName = keys[i];
+
+                    if (parent == null || !parent.ContainsKey(keys[i]))
+                    {
+                        return null;
+                    }
+                }
+                else
+                    return null;
+            }
+
+            return new DataObjectEntry(parent, entryName, ObjectId, _source);
         }
     }
 
@@ -115,6 +205,12 @@ namespace DataObjects
             else
             {
                 _source = DataSourceManager.GetSource(DataSourceManager.DefaultSource);
+            }
+
+            if(startIndex >= tokens.Length)
+            {
+                Valid = false;
+                return;
             }
 
             if (int.TryParse(tokens[startIndex], out int result))
@@ -187,9 +283,13 @@ namespace DataObjects
                     //If the search parameters only contain the ID we just use an empty string for the field name.
                     entry = new DataObjectEntry(dataObj, "", ObjectId, _source);
                 }
-                else
+                else if(dataObj.ContainsKey(_keys[^1]))
                 {
                     entry = new DataObjectEntry(dataObj, _keys[^1], ObjectId, _source);
+                }
+                else
+                {
+                    return false;
                 }
                 
                 return true;
@@ -206,6 +306,16 @@ namespace DataObjects
             }
 
             return null;
+        }
+
+        public bool Exists()
+        {
+            //if(GetEntry(out var val))
+            //{
+            //    return val.TryGetValue(out var _);
+            //}
+
+            return GetEntry(out var _);
         }
 
         /// <summary>
@@ -316,6 +426,18 @@ namespace DataObjects
             }
 
             return false;
+        }
+
+        public DataObjectEntry GetOrCreateKey()
+        {
+            GetOrCreateEntry(out DataObjectEntry entry, new Dictionary<string, object>());
+            return entry;
+        }
+
+        public DataObjectEntry GetOrCreateField(object defaultValue = null)
+        {
+            GetOrCreateEntry(out DataObjectEntry entry, defaultValue == null ? "" : defaultValue);
+            return entry;
         }
 
         /// <summary>
